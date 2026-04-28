@@ -5,21 +5,17 @@ import { Role, ShopType, PaymentMethod } from "../generated/client/enums";
 import * as dotenv from "dotenv";
 dotenv.config();
 import bcrypt from "bcryptjs";
-
-function parseDbUrl(url: string) {
-  const u = new URL(url);
-  return {
-    host: u.hostname,
-    port: parseInt(u.port || "3306"),
-    user: decodeURIComponent(u.username),
-    password: decodeURIComponent(u.password),
-    database: u.pathname.replace(/^\//, ""),
-    connectionLimit: 5,
-  };
-}
-
 const dbUrl = process.env.DATABASE_URL!;
-const adapter = new PrismaMariaDb(parseDbUrl(dbUrl));
+const u = new URL(dbUrl);
+const adapter = new PrismaMariaDb({
+  host: u.hostname,
+  port: parseInt(u.port || "3306"),
+  user: decodeURIComponent(u.username),
+  password: decodeURIComponent(u.password),
+  database: u.pathname.replace(/^\//, ""),
+  connectionLimit: 5,
+  allowPublicKeyRetrieval: true,
+});
 const prisma = new PrismaClient({ adapter });
 
 async function main() {

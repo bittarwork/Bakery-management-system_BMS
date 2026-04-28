@@ -2,9 +2,12 @@
 import { PrismaClient } from "@/generated/client/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
-function parseDbUrl(url: string) {
-  // Parse mysql://user:password@host:port/database
-  const u = new URL(url);
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+function buildPoolConfig(dbUrl: string) {
+  const u = new URL(dbUrl);
   return {
     host: u.hostname,
     port: parseInt(u.port || "3306"),
@@ -12,21 +15,17 @@ function parseDbUrl(url: string) {
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, ""),
     connectionLimit: 5,
+    // Required for MySQL 8 caching_sha2_password auth plugin over TCP
+    allowPublicKeyRetrieval: true,
   };
 }
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
-
 function createPrismaClient() {
-  // During Next.js build (static page collection) no real DB connection is made.
-  // Use a dummy URL so the client can be instantiated without connecting.
+  // Fallback URL allows prisma generate / next build to run without a live DB.
   const dbUrl =
     process.env.DATABASE_URL ?? "mysql://build:build@localhost:3306/build_placeholder";
 
-  const config = parseDbUrl(dbUrl);
-  const adapter = new PrismaMariaDb(config);
+  const adapter = new PrismaMariaDb(buildPoolConfig(dbUrl));
 
   return new PrismaClient({
     adapter,
