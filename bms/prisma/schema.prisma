@@ -18,20 +18,21 @@ enum Role {
   DISTRIBUTOR
 }
 
+// Simplified lifecycle: no DRAFT or CONFIRMED — order starts at READY_FOR_DISTRIBUTION
 enum OrderStatus {
-  draft
-  confirmed
-  ready_for_distribution
-  out_for_delivery
-  delivered
-  cancelled
+  ready_for_distribution // default when order is created
+  out_for_delivery       // set automatically when RouteRun is created
+  delivered              // set by distributor after delivery
+  cancelled              // set by admin
 }
 
+// Extended payment methods including debt and settlement types
 enum PaymentMethod {
-  CASH
-  BANK_TRANSFER
-  CHECK
-  OTHER
+  CASH          // cash received on delivery
+  BANK_TRANSFER // bank wire transfer
+  CREDIT        // debt — no amount received, added to shop balance
+  INSTALLMENT   // partial payment toward old debt
+  SETTLEMENT    // full settlement of accumulated balance
 }
 
 enum ShopType {
@@ -39,6 +40,11 @@ enum ShopType {
   WHOLESALE
   CAFE
   RESTAURANT
+  OTHER
+}
+
+enum ExpenseType {
+  FUEL
   OTHER
 }
 
@@ -56,12 +62,15 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  createdOrders  Order[]                  @relation("OrderCreatedBy")
-  assignments    DistributionAssignment[] @relation("AssignedDistributor")
-  assignedBy     DistributionAssignment[] @relation("AssignedBy")
-  payments       Payment[]                @relation("PaymentCreatedBy")
-  orderEvents    OrderEvent[]
-  priceAuditLogs ProductAuditLog[]
+  createdOrders      Order[]                  @relation("OrderCreatedBy")
+  distributedOrders  Order[]                  @relation("OrderDistributor")
+  assignments        DistributionAssignment[] @relation("AssignedDistributor")
+  assignedBy         DistributionAssignment[] @relation("AssignedBy")
+  payments           Payment[]                @relation("PaymentCreatedBy")
+  orderEvents        OrderEvent[]
+  priceAuditLogs     ProductAuditLog[]
+  routeRuns          RouteRun[]
+  orderReturns       OrderReturn[]
 
   @@map("users")
 }
@@ -74,6 +83,7 @@ model Shop {
   email     String?
   shopType  ShopType @default(RETAIL)
   address   String   @db.Text
+  city      String   // city / district — required
   latitude  Float?
   longitude Float?
   isActive  Boolean  @default(true)
@@ -101,6 +111,7 @@ model Product {
   // Relations
   orderItems  OrderItem[]
   auditLogs   ProductAuditLog[]
+  returns     OrderReturn[]
 
   @@map("products")
 }
@@ -123,23 +134,31 @@ model ProductAuditLog {
 
 // A delivery order for a shop
 model Order {
-  id           String      @id @default(cuid())
-  shopId       String
-  deliveryDate DateTime    @db.Date
-  status       OrderStatus @default(draft)
-  notes        String?     @db.Text
-  createdById  String
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id            String      @id @default(cuid())
+  shopId        String
+  deliveryDate  DateTime    @db.Date
+  status        OrderStatus @default(ready_for_distribution)
+  notes         String?     @db.Text
+  createdById   String
+  distributorId String?     // assigned driver — set at order creation
+  routeRunId    String?     // filled automatically when RouteRun is created
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   // Relations
   shop        Shop                    @relation(fields: [shopId], references: [id])
   createdBy   User                    @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  distributor User?                   @relation("OrderDistributor", fields: [distributorId], references: [id])
+  routeRun    RouteRun?               @relation(fields: [routeRunId], references: [id])
   items       OrderItem[]
   events      OrderEvent[]
   assignment  DistributionAssignment?
   payments    Payment[]
+  returns     OrderReturn[]
 
+  @@index([shopId])
+  @@index([distributorId])
+  @@index([routeRunId])
   @@map("orders")
 }
 
@@ -151,6 +170,7 @@ model OrderItem {
   quantity          Int
   unitPriceSnapshot Decimal @db.Decimal(10, 2) // locked price at order creation
   subtotal          Decimal @db.Decimal(10, 2) // quantity * unitPriceSnapshot
+  isGift            Boolean @default(false)    // gift items: counted in vehicle load, excluded from invoice value
 
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
@@ -172,7 +192,7 @@ model OrderEvent {
   @@map("order_events")
 }
 
-// Delivery vehicles (DB only, no UI management needed)
+// Delivery vehicles
 model Vehicle {
   id          String   @id @default(cuid())
   name        String
@@ -182,11 +202,12 @@ model Vehicle {
   createdAt   DateTime @default(now())
 
   assignments DistributionAssignment[]
+  routeRuns   RouteRun[]
 
   @@map("vehicles")
 }
 
-// Links an order to a distributor (and optionally a vehicle)
+// Links an order to a distributor (and optionally a vehicle) — kept for compatibility
 model DistributionAssignment {
   id            String   @id @default(cuid())
   orderId       String   @unique // one assignment per order
@@ -196,19 +217,72 @@ model DistributionAssignment {
   assignedAt    DateTime @default(now())
   notes         String?
 
-  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  distributor User    @relation("AssignedDistributor", fields: [distributorId], references: [id])
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  distributor User     @relation("AssignedDistributor", fields: [distributorId], references: [id])
   vehicle     Vehicle? @relation(fields: [vehicleId], references: [id])
-  assignedBy  User    @relation("AssignedBy", fields: [assignedById], references: [id])
+  assignedBy  User     @relation("AssignedBy", fields: [assignedById], references: [id])
 
   @@map("distribution_assignments")
+}
+
+// Return record registered by distributor at the customer site
+model OrderReturn {
+  id          String   @id @default(cuid())
+  orderId     String
+  productId   String
+  quantity    Int
+  reason      String?
+  createdById String   // distributor who registered the return
+  createdAt   DateTime @default(now())
+
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@map("order_returns")
+}
+
+// Daily route run — groups all orders for one distributor in one trip
+model RouteRun {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  distributorId   String
+  vehicleId       String?
+  whiteBagsLoaded Int      @default(0) // white bags loaded at start
+  brownBagsLoaded Int      @default(0) // brown bags loaded at start
+  reserveBags     Int      @default(0) // extra reserve bags
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+
+  distributor User           @relation(fields: [distributorId], references: [id])
+  vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
+  orders      Order[]        // orders linked when route is created
+  expenses    RouteExpense[]
+
+  @@index([distributorId])
+  @@index([date])
+  @@map("route_runs")
+}
+
+// Expenses recorded per route (fuel, etc.)
+model RouteExpense {
+  id         String      @id @default(cuid())
+  routeRunId String
+  type       ExpenseType @default(FUEL)
+  amount     Decimal     @db.Decimal(10, 2)
+  note       String?
+  createdAt  DateTime    @default(now())
+
+  routeRun RouteRun @relation(fields: [routeRunId], references: [id])
+
+  @@map("route_expenses")
 }
 
 // Payment records for orders or on-account for a shop
 model Payment {
   id          String        @id @default(cuid())
   shopId      String
-  orderId     String?       // optional: payment may cover multiple orders or be a deposit
+  orderId     String?       // optional: tied to a specific order
   amount      Decimal       @db.Decimal(10, 2)
   method      PaymentMethod @default(CASH)
   paymentDate DateTime      @db.Date
@@ -217,9 +291,10 @@ model Payment {
   createdById String
   createdAt   DateTime      @default(now())
 
-  shop      Shop  @relation(fields: [shopId], references: [id])
+  shop      Shop   @relation(fields: [shopId], references: [id])
   order     Order? @relation(fields: [orderId], references: [id])
-  createdBy User  @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  createdBy User   @relation("PaymentCreatedBy", fields: [createdById], references: [id])
 
+  @@index([shopId])
   @@map("payments")
 }
