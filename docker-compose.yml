@@ -1,0 +1,82 @@
+services:
+
+  # ─── MySQL Database ────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.4
+    container_name: bms_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-bms_db}
+      MYSQL_USER: ${MYSQL_USER:-bms_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-bms_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - bms_network
+
+  # ─── Database Migration + Seed (runs once then exits) ─────────────────────
+  migrate:
+    build:
+      context: ./bms
+      dockerfile: Dockerfile
+      target: builder
+    container_name: bms_migrate
+    restart: "no"
+    environment:
+      # Use root for migrate deploy so it can create the shadow DB if needed
+      DATABASE_URL: mysql://root:${MYSQL_ROOT_PASSWORD:-rootpass}@db:3306/${MYSQL_DATABASE:-bms_db}
+    command: >
+      sh -c "
+        echo 'Running migrations...' &&
+        npx prisma migrate deploy &&
+        echo 'Running seed...' &&
+        npx tsx prisma/seed.ts &&
+        echo 'Migration & seed complete!'
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - bms_network
+
+  # ─── Next.js Application ──────────────────────────────────────────────────
+  app:
+    build:
+      context: ./bms
+      dockerfile: Dockerfile
+    container_name: bms_app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-bms_user}:${MYSQL_PASSWORD:-bms_pass}@db:3306/${MYSQL_DATABASE:-bms_db}
+      AUTH_SECRET: ${AUTH_SECRET:-change-this-secret-in-production}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      # Required by NextAuth v5 in production to allow the host
+      AUTH_TRUST_HOST: "true"
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${AIzaSyDhnQwiZuURSLApdQAR_86POf0a_f9n2IE}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - bms_network
+
+volumes:
+  db_data:
+    name: bms_db_data
+
+networks:
+  bms_network:
+    name: bms_network

@@ -1,0 +1,25 @@
+// Extend NextAuth types to include user role
+import type { Role } from "@/generated/client/enums";
+import "next-auth";
+
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      role: Role;
+    };
+  }
+
+  interface User {
+    role: Role;
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    id: string;
+    role: Role;
+  }
+}

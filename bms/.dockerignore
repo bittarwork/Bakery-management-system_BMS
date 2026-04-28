@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Dependencies (will be reinstalled inside container)
+node_modules
+
+# Next.js build output
+.next
+out
+
+# Generated Prisma client (regenerated during build)
+generated
+
+# Environment files (use Docker secrets or env vars instead)
+.env
+.env.*
+
+# Development files
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode
+.idea
+*.suo
+*.swp

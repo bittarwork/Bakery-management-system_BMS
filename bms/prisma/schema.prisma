@@ -1,0 +1,225 @@
+// Prisma schema for Bakery Management System (BMS)
+// Database: MySQL | ORM: Prisma
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "mysql"
+  // Connection URL is configured in prisma.config.ts (Prisma v7 requirement)
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  DISTRIBUTOR
+}
+
+enum OrderStatus {
+  draft
+  confirmed
+  ready_for_distribution
+  out_for_delivery
+  delivered
+  cancelled
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHECK
+  OTHER
+}
+
+enum ShopType {
+  RETAIL
+  WHOLESALE
+  CAFE
+  RESTAURANT
+  OTHER
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+// System users: admins and distributors
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(DISTRIBUTOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  createdOrders  Order[]                  @relation("OrderCreatedBy")
+  assignments    DistributionAssignment[] @relation("AssignedDistributor")
+  assignedBy     DistributionAssignment[] @relation("AssignedBy")
+  payments       Payment[]                @relation("PaymentCreatedBy")
+  orderEvents    OrderEvent[]
+  priceAuditLogs ProductAuditLog[]
+
+  @@map("users")
+}
+
+// Client shops that receive deliveries
+model Shop {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  email     String?
+  shopType  ShopType @default(RETAIL)
+  address   String   @db.Text
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orders   Order[]
+  payments Payment[]
+
+  @@map("shops")
+}
+
+// Bakery products with price tracking
+model Product {
+  id        String   @id @default(cuid())
+  name      String
+  sku       String?  @unique
+  unit      String   @default("piece") // e.g. piece, kg, loaf
+  unitPrice Decimal  @db.Decimal(10, 2)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orderItems  OrderItem[]
+  auditLogs   ProductAuditLog[]
+
+  @@map("products")
+}
+
+// Tracks every price change for a product
+model ProductAuditLog {
+  id        String   @id @default(cuid())
+  productId String
+  oldPrice  Decimal  @db.Decimal(10, 2)
+  newPrice  Decimal  @db.Decimal(10, 2)
+  changedBy String   // userId
+  changedAt DateTime @default(now())
+  note      String?
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [changedBy], references: [id])
+
+  @@map("product_audit_logs")
+}
+
+// A delivery order for a shop
+model Order {
+  id           String      @id @default(cuid())
+  shopId       String
+  deliveryDate DateTime    @db.Date
+  status       OrderStatus @default(draft)
+  notes        String?     @db.Text
+  createdById  String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  shop        Shop                    @relation(fields: [shopId], references: [id])
+  createdBy   User                    @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  items       OrderItem[]
+  events      OrderEvent[]
+  assignment  DistributionAssignment?
+  payments    Payment[]
+
+  @@map("orders")
+}
+
+// Line items inside an order (price is snapshotted at order time)
+model OrderItem {
+  id                String  @id @default(cuid())
+  orderId           String
+  productId         String
+  quantity          Int
+  unitPriceSnapshot Decimal @db.Decimal(10, 2) // locked price at order creation
+  subtotal          Decimal @db.Decimal(10, 2) // quantity * unitPriceSnapshot
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// Audit trail for order state changes
+model OrderEvent {
+  id          String   @id @default(cuid())
+  orderId     String
+  actorId     String
+  description String
+  createdAt   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User  @relation(fields: [actorId], references: [id])
+
+  @@map("order_events")
+}
+
+// Delivery vehicles (DB only, no UI management needed)
+model Vehicle {
+  id          String   @id @default(cuid())
+  name        String
+  plateNumber String   @unique
+  capacity    String?  // free text e.g. "500 kg"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  assignments DistributionAssignment[]
+
+  @@map("vehicles")
+}
+
+// Links an order to a distributor (and optionally a vehicle)
+model DistributionAssignment {
+  id            String   @id @default(cuid())
+  orderId       String   @unique // one assignment per order
+  distributorId String
+  vehicleId     String?
+  assignedById  String
+  assignedAt    DateTime @default(now())
+  notes         String?
+
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  distributor User    @relation("AssignedDistributor", fields: [distributorId], references: [id])
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id])
+  assignedBy  User    @relation("AssignedBy", fields: [assignedById], references: [id])
+
+  @@map("distribution_assignments")
+}
+
+// Payment records for orders or on-account for a shop
+model Payment {
+  id          String        @id @default(cuid())
+  shopId      String
+  orderId     String?       // optional: payment may cover multiple orders or be a deposit
+  amount      Decimal       @db.Decimal(10, 2)
+  method      PaymentMethod @default(CASH)
+  paymentDate DateTime      @db.Date
+  reference   String?       // check number, bank reference, etc.
+  notes       String?       @db.Text
+  createdById String
+  createdAt   DateTime      @default(now())
+
+  shop      Shop  @relation(fields: [shopId], references: [id])
+  order     Order? @relation(fields: [orderId], references: [id])
+  createdBy User  @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+
+  @@map("payments")
+}
