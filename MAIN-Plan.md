@@ -2,7 +2,8 @@
 name: BMS — خطة البناء الكاملة
 overview: >
   خطة تقنية شاملة محدَّثة بناءً على الواقع التشغيلي الفعلي (ملفات Excel مايو 2025).
-  الموزّع يُسجِّل الدفع والمرتجعات من الهاتف. السائق يُعيَّن عند إنشاء الطلب.
+  دورة حياة مُبسَّطة: ready_for_distribution→out_for_delivery→delivered. الهدايا كـ OrderItem+isGift.
+  جولة اليوم تلقائية بـ node-cron الساعة 6 صباحاً. المرتجع عند الزبون فوراً.
   البنود ✅ مكتملة. البنود ⏳ هي خارطة الطريق القادمة بالترتيب.
 todos:
   - id: setup
@@ -33,7 +34,7 @@ todos:
     content: "المرحلة هـ (أساسي): تسجيل المدفوعات البسيطة + تقارير الإجماليات"
     status: completed
   - id: p1-schema-v2
-    content: "Schema v2: city للمحل + distributorId للطلب + PaymentMethod الكامل + OrderReturn + RouteRun + RouteExpense"
+    content: "Schema v2: OrderStatus مُبسَّط + isGift للبنود + city للمحل + distributorId+routeRunId للطلب + PaymentMethod الكامل + OrderReturn + RouteRun + RouteExpense"
     status: pending
   - id: p1-migration
     content: prisma migrate dev --name v2_full_features
@@ -51,7 +52,7 @@ todos:
     content: "رصيد الدين: API + بطاقة في صفحة المحل + عمود في قائمة الطلبات"
     status: pending
   - id: p5-route-run
-    content: "جولة اليوم (RouteRun): إنشاء + مصروفات + ملخص الصافي"
+    content: "جولة اليوم (RouteRun): node-cron 6 صباحاً + زر يدوي + تحويل الطلبات لـ OUT_FOR_DELIVERY + مصروفات + ملخص الصافي"
     status: pending
   - id: p6-reports
     content: "التقارير: إجمالي اليوم + تقرير لكل سائق + ديون المحلات"
@@ -61,9 +62,9 @@ isProject: true
 
 # BMS — خطة البناء الكاملة (الإصدار 3.0)
 
-> **آخر تحديث:** 28 أبريل 2026
+> **آخر تحديث:** 28 أبريل 2026 (الإصدار 3.1)
 > **الوضع الحالي:** المراحل أ → هـ (الأساسي) مُنجزة ✅
-> **التالي:** Schema v2 ← تعيين السائق عند إنشاء الطلب ← الموزّع يُسجِّل الدفع والمرتجعات ← رصيد الدين ← جولة اليوم ← التقارير
+> **التالي:** Schema v2 (OrderStatus+isGift+routeRunId) ← تعيين السائق ← الموزّع يُسجِّل الدفع+المرتجعات ← رصيد الدين ← جولة اليوم+node-cron ← التقارير
 
 ---
 
@@ -87,7 +88,7 @@ isProject: true
 | من يُسجِّل الدفع؟ | **الموزّع من الهاتف** (أساساً) + المدير من اللوحة |
 | متى تُحدَّد طريقة الدفع؟ | **عند التسليم** — لا عند إنشاء الطلب |
 | الدفع المجزأ؟ | **مسموح** — دفعتان (CASH + CREDIT) مرتبطتان بنفس الطلب |
-| من يُسجِّل المرتجعات؟ | **الموزّع** من الميدان لحظة الرفض |
+| من يُسجِّل المرتجعات؟ | **الموزّع** من الميدان لحظة الرفض — عند الزبون مباشرةً |
 | المرتجع يؤثر على قيمة الطلب؟ | **نعم** — قيمة التسليم = أصلية − مرتجع |
 | الطلب الأصلي عند المرتجع؟ | **يبقى كما هو** — المرتجع سجل منفصل |
 | رصيد الدين يُحسَب من؟ | **الطلبات المُسلَّمة فقط** (status=delivered) |
@@ -99,7 +100,11 @@ isProject: true
 | طباعة أو PDF؟ | **لا** — غير مطلوب |
 | VAT؟ | **لا تُحتسب إطلاقاً** |
 | GPS؟ | **لا** — زر تحديث الحالة فقط |
-| الهدايا؟ | **ملاحظة في notes** — لا بند مستقل |
+| الهدايا؟ | **OrderItem مع isGift=true** — تُحتسب في حمولة السيارة، لا تؤثر على قيمة الزبون |
+| دورة حياة الطلب؟ | **`ready_for_distribution` → `out_for_delivery` → `delivered` / `cancelled`** — لا draft ولا confirmed |
+| الطلب عند الإنشاء؟ | يذهب فوراً لـ **`ready_for_distribution`** |
+| متى يصير الطلب `out_for_delivery`؟ | عند إنشاء **RouteRun** (تلقائياً 6 صباحاً أو يدوياً) — تُحوَّل جميع طلبات السائق دفعةً واحدة |
+| جولة اليوم تُنشأ كيف؟ | **node-cron داخلي** الساعة 6 صباحاً + **زر يدوي** من لوحة المدير |
 
 ---
 
@@ -117,6 +122,9 @@ Vehicle                — مركبات
 Payment                — CASH | BANK_TRANSFER | CHECK | OTHER
 ```
 
+> **ملاحظة على دورة الحياة الحالية:** الكود الموجود يستخدم `DRAFT → CONFIRMED → READY_FOR_DISTRIBUTION → OUT_FOR_DELIVERY → DELIVERED / CANCELLED`.
+> **بعد v2:** يُحذف DRAFT وCONFIRMED — الطلب يبدأ مباشرةً من `READY_FOR_DISTRIBUTION`.
+
 ### Schema v2 — التعديلات المطلوبة ⏳
 
 #### 1. `Shop` — إضافة المدينة
@@ -128,7 +136,19 @@ model Shop {
 }
 ```
 
-#### 2. `PaymentMethod` — توسيع enum
+#### 2. `OrderStatus` — تبسيط دورة الحياة
+
+```prisma
+enum OrderStatus {
+  READY_FOR_DISTRIBUTION  // الحالة الافتراضية عند إنشاء الطلب
+  OUT_FOR_DELIVERY        // بعد إنشاء RouteRun — تُحوَّل آلياً
+  DELIVERED               // بعد ضغط الموزّع "تم التسليم"
+  CANCELLED               // إلغاء من المدير
+  // DRAFT و CONFIRMED محذوفان — لم تعد مطلوبة
+}
+```
+
+#### 3. `PaymentMethod` — توسيع enum
 
 ```prisma
 enum PaymentMethod {
@@ -140,21 +160,34 @@ enum PaymentMethod {
 }
 ```
 
-#### 3. `Order` — إضافة distributorId
+#### 4. `OrderItem` — إضافة isGift
+
+```prisma
+model OrderItem {
+  // ... الحقول الحالية (orderId, productId, quantity, unitPriceSnapshot) ...
+  isGift Boolean @default(false)
+  // isGift=true: الكمية تُحتسب في حمولة السيارة فقط، لا تدخل في قيمة الفاتورة ولا رصيد الدين
+}
+```
+
+#### 5. `Order` — إضافة distributorId و routeRunId
 
 ```prisma
 model Order {
   // ... الحقول الحالية ...
-  distributorId String?  // السائق المُعيَّن عند الإنشاء
-  distributor   User?    @relation("OrderDistributor", fields: [distributorId], references: [id])
+  status        OrderStatus @default(READY_FOR_DISTRIBUTION)  // الافتراضي الجديد
+  distributorId String?     // السائق المُعيَّن عند الإنشاء
+  routeRunId    String?     // تُملأ تلقائياً عند إنشاء RouteRun
+  distributor   User?       @relation("OrderDistributor", fields: [distributorId], references: [id])
+  routeRun      RouteRun?   @relation(fields: [routeRunId], references: [id])
   returns       OrderReturn[]
-  payments      Payment[]  // علاقة موجودة — تدعم دفعات متعددة لنفس الطلب
+  payments      Payment[]
 }
 ```
 
 > **ملاحظة:** `DistributionAssignment` يبقى كما هو للتوافق — عند إنشاء الطلب مع سائق يُنشأ assignment تلقائياً.
 
-#### 4. `OrderReturn` — مرتجعات مرتبطة بالطلب (ليس بالجولة)
+#### 6. `OrderReturn` — مرتجعات مرتبطة بالطلب (ليس بالجولة)
 
 ```prisma
 model OrderReturn {
@@ -163,7 +196,7 @@ model OrderReturn {
   productId   String
   quantity    Int
   reason      String?
-  createdById String   // الموزّع الذي سجّل المرتجع
+  createdById String   // الموزّع الذي سجّل المرتجع — عند الزبون مباشرةً
   createdAt   DateTime @default(now())
 
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -174,7 +207,7 @@ model OrderReturn {
 }
 ```
 
-#### 5. `RouteRun` — جولة اليوم (وحدة تجميع وملخص)
+#### 7. `RouteRun` — جولة اليوم (وحدة تجميع وملخص)
 
 ```prisma
 model RouteRun {
@@ -190,13 +223,19 @@ model RouteRun {
 
   distributor User           @relation(fields: [distributorId], references: [id])
   vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
+  orders      Order[]        // الطلبات المرتبطة — تُملأ عند إنشاء الجولة
   expenses    RouteExpense[]
 
   @@map("route_runs")
 }
 ```
 
-#### 6. `RouteExpense` — مصروفات الجولة (ديزل...)
+> **آلية الإنشاء:** عند إنشاء RouteRun (node-cron الساعة 6 صباحاً أو يدوياً):
+> 1. تُجمَع كل طلبات هذا السائق بحالة `READY_FOR_DISTRIBUTION` في ذلك اليوم
+> 2. يُضبط `Order.routeRunId` لكل منها
+> 3. يتغير status كل منها إلى `OUT_FOR_DELIVERY` آلياً
+
+#### 8. `RouteExpense` — مصروفات الجولة (ديزل...)
 
 ```prisma
 enum ExpenseType { FUEL OTHER }
@@ -274,13 +313,16 @@ flowchart TD
 
 1. يفتح الداشبورد → يرى: طلبات اليوم + إجمالي الديون المتراكمة
 2. _(مرة واحدة)_ يُضيف المحلات + مدن + خريطة، المنتجات، الموزّعين
-3. يُنشئ طلبات اليوم — لكل طلب: محل + بنود + كميات + **اختيار السائق** + ملاحظات (هدايا...)
-4. يُحوِّل الطلبات إلى «جاهز للتوزيع»
-5. يُنشئ **جولة اليوم** (RouteRun): سائق + سيارة + كميات محمَّلة + احتياطي
-6. يتابع حالة التسليمات على مدار اليوم
-7. عند انتهاء الجولة: يُدخل مصروف الوقود
-8. يراجع **ملخص الجولة**: مقبوضات − مصروفات = **الصافي**
-9. يراجع **التقارير**: لكل سائق على حدة + الإجمالي + ديون المحلات
+3. يُنشئ طلبات اليوم ليلاً — لكل طلب: محل + بنود + كميات + **اختيار السائق** + ملاحظات
+   - الهدايا: يُضيف بنداً بـ `isGift=true` لمنتج معيّن
+   - الطلب يُحفظ مباشرةً بحالة **`READY_FOR_DISTRIBUTION`** — لا خطوات إضافية
+4. في الساعة **6 صباحاً**: node-cron يُنشئ جولة لكل سائق تلقائياً
+   - أو المدير يضغط «إنشاء جولات اليوم» يدوياً
+   - جميع طلبات السائق تتحول لـ **`OUT_FOR_DELIVERY`** آلياً
+5. يتابع حالة التسليمات على مدار اليوم
+6. عند انتهاء الجولة: يُدخل مصروف الوقود
+7. يراجع **ملخص الجولة**: مقبوضات − مصروفات = **الصافي**
+8. يراجع **التقارير**: لكل سائق على حدة + الإجمالي + ديون المحلات
 
 ---
 
@@ -310,17 +352,17 @@ flowchart TD
 **الخطوات التفصيلية:**
 
 1. يفتح المتصفح على هاتفه → يُسجِّل دخوله
-2. يرى قائمة طلباته مرتّبة: اسم المحل + المدينة
+2. يرى قائمة طلباته مرتّبة (حالة: `OUT_FOR_DELIVERY`): اسم المحل + المدينة
 3. يفتح تفاصيل الطلب:
-   - البنود والكميات
+   - البنود والكميات (بما فيها بنود الهدية مُمَيَّزة)
    - **رصيد دين المحل** (قراءة فقط)
-   - ملاحظات الهدايا والتعليمات
+   - ملاحظات وتعليمات
 4. يضغط الخريطة → ينتقل للمحل (Google Maps)
-5. عند الوصول وتسليم البضاعة:
-   - **لو رُفض جزء:** يُسجِّل المرتجع (منتج + كمية)
-   - **يُسجِّل الدفع:** يختار النوع (نقد / دين / بنك / دفعة / تسديد) + المبلغ
+5. **عند الوصول — بالترتيب:**
+   - **أولاً:** لو رُفض جزء من الطلب → يُسجِّل المرتجع **فوراً عند الزبون** (منتج + كمية)
+   - **ثانياً:** يُسجِّل الدفع: يختار النوع + المبلغ
    - **لو دفع مجزأ:** يُضيف دفعة ثانية (مثلاً 50€ نقد + 41€ دين)
-   - يضغط **«تم التسليم»**
+   - **أخيراً:** يضغط **«تم التسليم»** — الحالة تصبح `DELIVERED`
 6. يكرر مع باقي الطلبات
 7. يعود للمستودع — المدير يُدخل مصروف الوقود ويرى الملخص
 
@@ -383,14 +425,16 @@ app/
 
 **الهدف:** تجهيز قاعدة البيانات لكل الميزات الجديدة دفعة واحدة.
 
+- [ ] تبسيط enum `OrderStatus`: حذف `DRAFT` و`CONFIRMED`، الافتراضي = `READY_FOR_DISTRIBUTION`
+- [ ] إضافة `isGift Boolean @default(false)` لـ `OrderItem`
 - [ ] إضافة `city String` لـ `Shop`
-- [ ] إضافة `distributorId String?` لـ `Order`
+- [ ] إضافة `distributorId String?` و`routeRunId String?` لـ `Order`
 - [ ] توسيع enum `PaymentMethod`: أضف `CREDIT, INSTALLMENT, SETTLEMENT`
 - [ ] إنشاء موديل `OrderReturn`
-- [ ] إنشاء موديل `RouteRun`
+- [ ] إنشاء موديل `RouteRun` (مع علاقة `orders Order[]`)
 - [ ] إنشاء موديل `RouteExpense`
 - [ ] تشغيل: `prisma migrate dev --name v2_full_features`
-- [ ] تحديث `seed.ts` بأمثلة واقعية
+- [ ] تحديث `seed.ts` بأمثلة واقعية (هدية + دين + تسديد)
 
 ---
 
@@ -435,12 +479,15 @@ app/
 
 ### الأولوية 5 — جولة اليوم (RouteRun) ⏳
 
-**الهدف:** تجميع الجولة + حساب الصافي.
+**الهدف:** تجميع الجولة + حساب الصافي + إنشاء تلقائي بـ cron.
 
-- [ ] `POST /api/route-runs` — إنشاء جولة
+- [ ] تثبيت `node-cron` كـ dependency
+- [ ] إنشاء `lib/cron.ts` — يُهيَّأ في `app/layout.tsx` (أو في custom server)
+- [ ] `POST /api/route-runs/auto-create` — يُنشئ جولات لكل سائق له طلبات `READY_FOR_DISTRIBUTION` اليوم + يُحوِّلها لـ `OUT_FOR_DELIVERY`
+- [ ] `POST /api/route-runs` — إنشاء جولة يدوياً (نفس المنطق)
 - [ ] `GET /api/route-runs/[id]` — تفاصيل الجولة
 - [ ] `POST /api/route-runs/[id]/expenses` — إضافة مصروف
-- [ ] صفحة `/admin/distribution/route-runs/new` — فورم إنشاء جولة
+- [ ] صفحة `/admin/distribution/route-runs/new` — فورم إنشاء يدوي + زر «إنشاء جولات اليوم» (يستدعي auto-create)
 - [ ] صفحة `/admin/distribution/route-runs/[id]` — تفاصيل + مصروفات + **ملخص: مقبوضات − مصروفات = الصافي**
 - [ ] رابط من صفحة distribution الحالية لإنشاء جولة جديدة
 
@@ -467,10 +514,12 @@ app/
 | القاعدة | التفاصيل |
 |---------|----------|
 | رصيد الدين | لا يُخزَّن — يُحسَب دائماً من `Order JOIN Payment JOIN OrderReturn` |
-| الهدايا | حقل `Order.notes` الموجود — لا جدول جديد |
+| الهدايا | `OrderItem` مع `isGift=true` — تُحتسب في حمولة السيارة فقط، مُستثناة من قيمة الفاتورة ورصيد الدين |
 | CREDIT payment | لا يوجد مبلغ مُستلَم — `amount = 0` أو null، يُحسَب من قيمة الطلب |
 | الدفع المجزأ | دفعتان مستقلتان مرتبطتان بـ `orderId` نفسه في جدول `payments` |
-| OrderReturn | مرتبط بـ `orderId` لا بـ `routeRunId` — لأن الموزّع يُسجِّله لحظة الرفض |
-| RouteRun | اختيارية — يمكن البدء بدونها وإضافتها في المرحلة 5 |
+| OrderReturn | مرتبط بـ `orderId` — يُسجَّله الموزّع عند الزبون لحظة الرفض، قبل الضغط على "تم التسليم" |
+| RouteRun + node-cron | `node-cron` يشتغل داخل التطبيق — ينفّذ `POST /api/route-runs/auto-create` كل يوم الساعة 6 صباحاً |
+| OrderStatus | عند إنشاء الطلب: `READY_FOR_DISTRIBUTION` — عند إنشاء RouteRun: `OUT_FOR_DELIVERY` — عند التسليم: `DELIVERED` |
+| isGift في حساب الرصيد | `OrderItem` بـ `isGift=true` تُستثنى من `unitPriceSnapshot × quantity` في صيغة حساب الدين |
 | Migration | `prisma migrate dev --name v2_full_features` |
-| seed.ts | أضف مدن واقعية + مثال دين + مثال تسديد رصيد |
+| seed.ts | أضف مدن واقعية + مثال دين + مثال تسديد رصيد + مثال هدية (isGift=true) |
