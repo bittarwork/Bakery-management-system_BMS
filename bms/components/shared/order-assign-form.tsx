@@ -39,7 +39,7 @@ interface OrderAssignFormProps {
   };
 }
 
-const ASSIGNABLE_STATUSES = ["confirmed", "ready_for_distribution", "out_for_delivery"];
+const ASSIGNABLE_STATUSES = ["ready_for_distribution", "out_for_delivery"];
 
 export function OrderAssignForm({
   orderId,
@@ -115,7 +115,8 @@ export function OrderAssignForm({
                 </SelectTrigger>
                 <SelectContent>
                   {distributors.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
+                    // label prop ensures trigger shows name not raw ID
+                    <SelectItem key={d.id} value={d.id} label={d.name}>
                       {d.name}
                     </SelectItem>
                   ))}
@@ -131,9 +132,10 @@ export function OrderAssignForm({
                     <SelectValue placeholder="اختر مركبة..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">بدون مركبة</SelectItem>
+                    <SelectItem value="none" label="بدون مركبة">بدون مركبة</SelectItem>
                     {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
+                      // label prop ensures trigger shows name+plate not raw ID
+                      <SelectItem key={v.id} value={v.id} label={`${v.name} (${v.plateNumber})`}>
                         {v.name} ({v.plateNumber})
                       </SelectItem>
                     ))}

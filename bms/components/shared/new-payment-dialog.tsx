@@ -113,7 +113,7 @@ export function NewPaymentDialog({ shops }: NewPaymentDialogProps) {
               </SelectTrigger>
               <SelectContent>
                 {shops.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
+                  <SelectItem key={s.id} value={s.id} label={s.name}>
                     {s.name}
                   </SelectItem>
                 ))}

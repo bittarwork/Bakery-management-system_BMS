@@ -95,14 +95,13 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
     );
   }
 
-  // Invoice total: only non-gift items (gifts are excluded from invoice)
+  // Invoice total: only non-gift items
   const invoiceTotal = lines.reduce((sum, line) => {
     if (line.isGift) return sum;
     const product = products.find((p) => p.id === line.productId);
     return sum + (product?.unitPrice ?? 0) * (line.quantity || 0);
   }, 0);
 
-  // Gift items count for display
   const giftItemsCount = lines.filter((l) => l.isGift && l.productId && l.quantity > 0).length;
   const totalBagsInVehicle = lines
     .filter((l) => l.productId && l.quantity > 0)
@@ -113,25 +112,15 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
 
     const validLines = lines.filter((l) => l.productId && l.quantity > 0);
 
-    if (!shopId) {
-      toast.error("يرجى اختيار المحل");
-      return;
-    }
-    if (!distributorId) {
-      toast.error("يرجى اختيار الموزع / السائق");
-      return;
-    }
-    if (validLines.length === 0) {
-      toast.error("يرجى إضافة بند واحد على الأقل");
-      return;
-    }
+    if (!shopId) { toast.error("يرجى اختيار المحل"); return; }
+    if (!distributorId) { toast.error("يرجى اختيار الموزع / السائق"); return; }
+    if (validLines.length === 0) { toast.error("يرجى إضافة بند واحد على الأقل"); return; }
     if (!validLines.some((l) => !l.isGift)) {
       toast.error("يجب أن يحتوي الطلب على بند واحد على الأقل غير هدية");
       return;
     }
 
     setLoading(true);
-
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -164,13 +153,17 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
+    // No max-w constraint — takes full available width
+    <form onSubmit={handleSubmit} className="space-y-6">
 
-      {/* ─── Shop + Date ─────────────────────────────────────────────── */}
+      {/* ─── Shop + Date ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>المحل *</Label>
-          <Select value={shopId} onValueChange={(v) => v && setShopId(v)} required>
+          <Select
+            value={shopId}
+            onValueChange={(v) => v && setShopId(v)}
+          >
             <SelectTrigger>
               <SelectValue placeholder="اختر المحل..." />
             </SelectTrigger>
@@ -179,11 +172,9 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([city, cityShops]) => (
                   <SelectGroup key={city}>
-                    <SelectLabel className="text-xs text-muted-foreground">
-                      📍 {city}
-                    </SelectLabel>
+                    <SelectLabel>📍 {city}</SelectLabel>
                     {cityShops.map((shop) => (
-                      <SelectItem key={shop.id} value={shop.id}>
+                      <SelectItem key={shop.id} value={shop.id} label={shop.name}>
                         {shop.name}
                       </SelectItem>
                     ))}
@@ -202,23 +193,27 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
             onChange={(e) => setDeliveryDate(e.target.value)}
             required
             dir="ltr"
+            className="h-9"
           />
         </div>
       </div>
 
-      {/* ─── Distributor ─────────────────────────────────────────────── */}
+      {/* ─── Distributor ──────────────────────────────────────────────── */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
           <User2 className="h-4 w-4 text-muted-foreground" />
           الموزع / السائق *
         </Label>
-        <Select value={distributorId} onValueChange={(v) => v && setDistributorId(v)} required>
+        <Select
+          value={distributorId}
+          onValueChange={(v) => v && setDistributorId(v)}
+        >
           <SelectTrigger>
             <SelectValue placeholder="اختر الموزع المسؤول عن هذا الطلب..." />
           </SelectTrigger>
           <SelectContent>
             {distributors.map((d) => (
-              <SelectItem key={d.id} value={d.id}>
+              <SelectItem key={d.id} value={d.id} label={d.name}>
                 {d.name}
               </SelectItem>
             ))}
@@ -226,7 +221,7 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
         </Select>
         {distributorId && (
           <p className="text-xs text-muted-foreground">
-            سيُعيَّن هذا الطلب للموزع فور الإنشاء — ويظهر في قائمة طلباته
+            سيُعيَّن هذا الطلب للموزع فور الإنشاء ويظهر في قائمة طلباته
           </p>
         )}
       </div>
@@ -239,13 +234,13 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
             بنود الطلب
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2">
 
-          {/* Column headers */}
-          <div className="grid grid-cols-[1fr_80px_auto_72px_32px] gap-2 text-xs text-muted-foreground px-1 hidden md:grid">
+          {/* Desktop column headers */}
+          <div className="hidden md:grid grid-cols-[1fr_90px_90px_90px_36px] gap-2 text-xs text-muted-foreground px-1 pb-1 border-b">
             <span>المنتج</span>
             <span className="text-center">الكمية</span>
-            <span className="text-center">هدية</span>
+            <span className="text-center">نوع البند</span>
             <span className="text-left">الإجمالي</span>
             <span />
           </div>
@@ -259,93 +254,159 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
             return (
               <div
                 key={index}
-                className={`grid grid-cols-[1fr_80px_auto_72px_32px] gap-2 items-center p-2 rounded-lg border transition-colors ${
+                className={`rounded-lg border p-2 transition-colors ${
                   line.isGift
                     ? "bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800"
-                    : "bg-card border-transparent"
+                    : "bg-card border-border"
                 }`}
               >
-                {/* Product selector */}
-                <Select
-                  value={line.productId}
-                  onValueChange={(v) => v && updateLine(index, "productId", v)}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="اختر منتجاً..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                        <span className="text-muted-foreground text-xs mr-1">
-                          ({p.unitPrice.toFixed(2)} € / {p.unit})
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Desktop layout */}
+                <div className="hidden md:grid grid-cols-[1fr_90px_90px_90px_36px] gap-2 items-center">
+                  {/* Product selector — label prop ensures trigger shows name not ID */}
+                  <Select
+                    value={line.productId}
+                    onValueChange={(v) => v && updateLine(index, "productId", v)}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="اختر منتجاً..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((p) => (
+                        <SelectItem
+                          key={p.id}
+                          value={p.id}
+                          label={p.name}
+                        >
+                          {p.name}
+                          <span className="text-muted-foreground text-xs">
+                            {p.unitPrice.toFixed(2)} €/{p.unit}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-                {/* Quantity */}
-                <Input
-                  type="number"
-                  min="1"
-                  value={line.quantity}
-                  onChange={(e) => updateLine(index, "quantity", parseInt(e.target.value) || 1)}
-                  className="h-9 text-center"
-                  dir="ltr"
-                />
+                  {/* Quantity */}
+                  <Input
+                    type="number"
+                    min="1"
+                    value={line.quantity}
+                    onChange={(e) => updateLine(index, "quantity", parseInt(e.target.value) || 1)}
+                    className="h-9 text-center"
+                    dir="ltr"
+                  />
 
-                {/* Gift toggle */}
-                <Button
-                  type="button"
-                  variant={line.isGift ? "default" : "outline"}
-                  size="sm"
-                  className={`h-9 px-3 gap-1.5 transition-all ${
-                    line.isGift
-                      ? "bg-amber-500 hover:bg-amber-600 border-amber-500 text-white"
-                      : "text-muted-foreground"
-                  }`}
-                  onClick={() => toggleGift(index)}
-                  title="تحديد كهدية — لن تُضاف لفاتورة المحل"
-                >
-                  <Gift className="h-3.5 w-3.5" />
-                  <span className="text-xs hidden sm:inline">
-                    {line.isGift ? "هدية" : "عادي"}
+                  {/* Gift toggle */}
+                  <Button
+                    type="button"
+                    variant={line.isGift ? "default" : "outline"}
+                    size="sm"
+                    className={`h-9 w-full gap-1.5 transition-all ${
+                      line.isGift
+                        ? "bg-amber-500 hover:bg-amber-600 border-amber-500 text-white"
+                        : "text-muted-foreground"
+                    }`}
+                    onClick={() => toggleGift(index)}
+                    title="تحديد كهدية — لن تُضاف لفاتورة المحل"
+                  >
+                    <Gift className="h-3.5 w-3.5" />
+                    <span className="text-xs">{line.isGift ? "هدية" : "عادي"}</span>
+                  </Button>
+
+                  {/* Line subtotal */}
+                  <span
+                    className={`text-sm font-mono text-left tabular-nums ${
+                      line.isGift ? "text-amber-600 dark:text-amber-400 text-xs" : "font-semibold"
+                    }`}
+                    dir="ltr"
+                  >
+                    {line.isGift ? "هدية" : lineTotal !== null ? `${lineTotal.toFixed(2)} €` : "—"}
                   </span>
-                </Button>
 
-                {/* Line subtotal */}
-                <span
-                  className={`text-sm font-mono text-left tabular-nums ${
-                    line.isGift ? "text-amber-600 dark:text-amber-400" : "font-semibold"
-                  }`}
-                  dir="ltr"
-                >
-                  {line.isGift ? (
-                    <span className="text-xs">هدية</span>
-                  ) : lineTotal !== null ? (
-                    `${lineTotal.toFixed(2)} €`
-                  ) : (
-                    "—"
-                  )}
-                </span>
+                  {/* Remove */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 text-destructive hover:text-destructive"
+                    onClick={() => removeLine(index)}
+                    disabled={lines.length === 1}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
 
-                {/* Remove button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => removeLine(index)}
-                  disabled={lines.length === 1}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                {/* Mobile layout — stacked */}
+                <div className="flex flex-col gap-2 md:hidden">
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1">
+                      <Select
+                        value={line.productId}
+                        onValueChange={(v) => v && updateLine(index, "productId", v)}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="اختر منتجاً..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products.map((p) => (
+                            <SelectItem key={p.id} value={p.id} label={p.name}>
+                              {p.name}
+                              <span className="text-muted-foreground text-xs">
+                                {p.unitPrice.toFixed(2)} €/{p.unit}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-destructive flex-shrink-0"
+                      onClick={() => removeLine(index)}
+                      disabled={lines.length === 1}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      type="number"
+                      min="1"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(index, "quantity", parseInt(e.target.value) || 1)}
+                      className="h-9 w-24 text-center"
+                      dir="ltr"
+                    />
+                    <Button
+                      type="button"
+                      variant={line.isGift ? "default" : "outline"}
+                      size="sm"
+                      className={`h-9 gap-1.5 ${
+                        line.isGift
+                          ? "bg-amber-500 hover:bg-amber-600 border-amber-500 text-white"
+                          : "text-muted-foreground"
+                      }`}
+                      onClick={() => toggleGift(index)}
+                    >
+                      <Gift className="h-3.5 w-3.5" />
+                      <span className="text-xs">{line.isGift ? "هدية" : "عادي"}</span>
+                    </Button>
+                    <span className="text-sm font-mono mr-auto" dir="ltr">
+                      {line.isGift ? (
+                        <span className="text-amber-600 text-xs">هدية</span>
+                      ) : lineTotal !== null ? (
+                        `${lineTotal.toFixed(2)} €`
+                      ) : "—"}
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
 
-          <Button type="button" variant="outline" size="sm" onClick={addLine} className="mt-1">
+          <Button type="button" variant="outline" size="sm" onClick={addLine}>
             <Plus className="h-4 w-4 ml-1" />
             إضافة بند
           </Button>
@@ -354,24 +415,19 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
 
           {/* Summary */}
           <div className="space-y-1.5 pt-1">
-            {/* Invoice total (non-gift) */}
             <div className="flex justify-between items-center font-bold text-base">
               <span>إجمالي الفاتورة</span>
               <span dir="ltr">{invoiceTotal.toFixed(2)} €</span>
             </div>
-
-            {/* Vehicle load info */}
             <div className="flex justify-between items-center text-sm text-muted-foreground">
               <span>إجمالي الأكياس المحمَّلة</span>
               <span dir="ltr">{totalBagsInVehicle} كيس</span>
             </div>
-
-            {/* Gift items note */}
             {giftItemsCount > 0 && (
               <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 rounded-md px-3 py-2 mt-2">
                 <Gift className="h-3.5 w-3.5 flex-shrink-0" />
                 <span>
-                  {giftItemsCount} بند{giftItemsCount > 1 ? " هدايا" : " هدية"} — مُدرجة في حمولة السيارة، غير مُدرجة في الفاتورة
+                  {giftItemsCount} بند{giftItemsCount > 1 ? " هدايا" : " هدية"} — في الحمولة، غير مُفوترة
                 </span>
               </div>
             )}
@@ -379,7 +435,7 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
         </CardContent>
       </Card>
 
-      {/* ─── Notes ───────────────────────────────────────────────────── */}
+      {/* ─── Notes ────────────────────────────────────────────────────── */}
       <div className="space-y-2">
         <Label htmlFor="notes">ملاحظات (اختياري)</Label>
         <Textarea
@@ -391,12 +447,10 @@ export function NewOrderForm({ shops, products, distributors }: NewOrderFormProp
         />
       </div>
 
-      {/* ─── Submit ──────────────────────────────────────────────────── */}
+      {/* ─── Submit ───────────────────────────────────────────────────── */}
       <div className="flex gap-3">
-        <Button type="submit" disabled={loading} className="min-w-32">
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin ml-2" />
-          ) : null}
+        <Button type="submit" disabled={loading} className="min-w-36">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
           إنشاء الطلب
         </Button>
         <Button type="button" variant="outline" onClick={() => router.back()}>

@@ -259,12 +259,12 @@ function OrderRow({
                 value={value?.distributorId ?? ""}
                 onValueChange={(v) => v && onChange("distributorId", v)}
               >
-                <SelectTrigger className="w-44">
+                <SelectTrigger className="min-w-36">
                   <SelectValue placeholder="الموزّع..." />
                 </SelectTrigger>
                 <SelectContent>
                   {distributors.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>
+                    <SelectItem key={d.id} value={d.id} label={d.name}>
                       {d.name}
                     </SelectItem>
                   ))}
@@ -276,13 +276,13 @@ function OrderRow({
                   value={value?.vehicleId ?? ""}
                   onValueChange={(v) => v && onChange("vehicleId", v)}
                 >
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="min-w-32">
                     <SelectValue placeholder="المركبة..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">بدون مركبة</SelectItem>
+                    <SelectItem value="none" label="بدون مركبة">بدون مركبة</SelectItem>
                     {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
+                      <SelectItem key={v.id} value={v.id} label={v.name}>
                         {v.name}
                       </SelectItem>
                     ))}
