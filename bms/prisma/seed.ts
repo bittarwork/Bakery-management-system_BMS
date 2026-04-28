@@ -23,11 +23,13 @@ async function main() {
   console.log("🌱 Seeding database (Schema v2 — real shop data)...");
 
   // ─── Users ───────────────────────────────────────────────────────────────
+  // Fixed IDs ensure session tokens remain valid across resets
   const adminPassword = await bcrypt.hash("admin123", 12);
   const admin = await prisma.user.upsert({
     where: { email: "admin@bms.com" },
     update: {},
     create: {
+      id: "user-admin-001",
       name: "المدير",
       email: "admin@bms.com",
       passwordHash: adminPassword,
@@ -41,6 +43,7 @@ async function main() {
     where: { email: "ali@bms.com" },
     update: {},
     create: {
+      id: "user-dist-001",
       name: "علي الموزع",
       email: "ali@bms.com",
       passwordHash: dist1Password,
@@ -54,6 +57,7 @@ async function main() {
     where: { email: "omar@bms.com" },
     update: {},
     create: {
+      id: "user-dist-002",
       name: "عمر الموزع",
       email: "omar@bms.com",
       passwordHash: dist2Password,
