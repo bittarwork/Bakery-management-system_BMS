@@ -42,6 +42,7 @@ export async function PATCH(
         email: body.email ?? null,
         shopType: body.shopType,
         address: body.address,
+        city: body.city ?? "",
         latitude: body.latitude ?? null,
         longitude: body.longitude ?? null,
         isActive: body.isActive,

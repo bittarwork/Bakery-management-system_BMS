@@ -24,10 +24,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, phone, email, shopType, address, latitude, longitude } = body;
+    const { name, phone, email, shopType, address, city, latitude, longitude } = body;
 
-    if (!name || !phone || !address) {
-      return badRequest("الاسم والهاتف والعنوان مطلوبة");
+    if (!name || !phone || !address || !city) {
+      return badRequest("الاسم والهاتف والمدينة والعنوان مطلوبة");
     }
 
     const shop = await prisma.shop.create({
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
         email: email || null,
         shopType: shopType || "RETAIL",
         address,
+        city,
         latitude: latitude ?? null,
         longitude: longitude ?? null,
       },

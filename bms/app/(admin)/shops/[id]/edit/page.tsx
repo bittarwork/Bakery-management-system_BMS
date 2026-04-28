@@ -28,6 +28,7 @@ export default async function EditShopPage({
           email: shop.email ?? undefined,
           shopType: shop.shopType as "RETAIL" | "WHOLESALE" | "CAFE" | "RESTAURANT" | "OTHER",
           address: shop.address,
+          city: shop.city,
           latitude: shop.latitude ?? undefined,
           longitude: shop.longitude ?? undefined,
           isActive: shop.isActive,

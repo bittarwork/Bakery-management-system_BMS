@@ -17,7 +17,8 @@ export default async function DistributionPage({
     prisma.order.findMany({
       where: {
         deliveryDate: { gte: start, lte: end },
-        status: { notIn: ["draft", "cancelled"] },
+        // v2: all orders start at ready_for_distribution — exclude only cancelled
+        status: { not: "cancelled" },
       },
       include: {
         shop: { select: { name: true, address: true, latitude: true, longitude: true } },

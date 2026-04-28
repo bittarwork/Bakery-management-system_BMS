@@ -15,9 +15,11 @@ import {
 import { Plus } from "lucide-react";
 import { OrderFilters } from "@/components/shared/order-filters";
 
-const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  draft: { label: "مسودة", variant: "secondary" },
-  confirmed: { label: "مؤكد", variant: "outline" },
+// v2 statuses only — draft/confirmed removed
+const STATUS_LABELS: Record<
+  string,
+  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+> = {
   ready_for_distribution: { label: "جاهز للتوزيع", variant: "default" },
   out_for_delivery: { label: "في الطريق", variant: "default" },
   delivered: { label: "مُسلَّم", variant: "outline" },
@@ -31,9 +33,7 @@ export default async function OrdersPage({
 }) {
   const { date, status } = await searchParams;
 
-  // Default to today if no date provided
   const filterDate = date ?? new Date().toISOString().split("T")[0];
-
   const start = new Date(`${filterDate}T00:00:00`);
   const end = new Date(`${filterDate}T23:59:59`);
 
@@ -43,18 +43,21 @@ export default async function OrdersPage({
       ...(status ? { status: status as never } : {}),
     },
     include: {
-      shop: { select: { name: true } },
+      shop: { select: { name: true, city: true } },
+      // Use direct distributor relation (v2) — fallback to assignment
+      distributor: { select: { name: true } },
       assignment: {
         include: { distributor: { select: { name: true } } },
       },
       _count: { select: { items: true } },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   });
 
-  // Calculate total value for delivered orders
-  const deliveredOrders = await prisma.orderItem.aggregate({
+  // Invoice total for delivered orders (exclude gift items from total)
+  const deliveredTotal = await prisma.orderItem.aggregate({
     where: {
+      isGift: false,
       order: {
         deliveryDate: { gte: start, lte: end },
         status: "delivered",
@@ -63,7 +66,7 @@ export default async function OrdersPage({
     _sum: { subtotal: true },
   });
 
-  const dayTotal = deliveredOrders._sum.subtotal?.toNumber() ?? 0;
+  const dayTotal = deliveredTotal._sum.subtotal?.toNumber() ?? 0;
 
   return (
     <div className="space-y-6">
@@ -72,9 +75,7 @@ export default async function OrdersPage({
           <h1 className="text-2xl font-bold">الطلبات</h1>
           <p className="text-muted-foreground">
             {orders.length} طلب ·{" "}
-            {status
-              ? STATUS_LABELS[status]?.label ?? status
-              : "جميع الحالات"}
+            {status ? STATUS_LABELS[status]?.label ?? status : "جميع الحالات"}
             {dayTotal > 0 && (
               <span dir="ltr"> · {dayTotal.toFixed(2)} € مُسلَّم</span>
             )}
@@ -97,25 +98,34 @@ export default async function OrdersPage({
             <TableHeader>
               <TableRow>
                 <TableHead>المحل</TableHead>
+                <TableHead>المدينة</TableHead>
                 <TableHead>الأصناف</TableHead>
                 <TableHead>الموزّع</TableHead>
                 <TableHead>الحالة</TableHead>
-                <TableHead className="w-24">تفاصيل</TableHead>
+                <TableHead className="w-20">تفاصيل</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {orders.map((order) => {
                 const statusInfo = STATUS_LABELS[order.status];
+                // Prefer direct distributor field (v2), fallback to assignment
+                const distributorName =
+                  order.distributor?.name ??
+                  order.assignment?.distributor.name ??
+                  "—";
                 return (
                   <TableRow key={order.id}>
                     <TableCell className="font-medium">
                       {order.shop.name}
                     </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {order.shop.city}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {order._count.items} صنف
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {order.assignment?.distributor.name ?? "—"}
+                      {distributorName}
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusInfo?.variant ?? "secondary"}>

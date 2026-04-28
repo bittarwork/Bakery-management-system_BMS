@@ -28,6 +28,7 @@ interface ShopFormProps {
     email?: string;
     shopType: ShopType;
     address: string;
+    city?: string;
     latitude?: number;
     longitude?: number;
     isActive?: boolean;
@@ -52,6 +53,7 @@ export function ShopForm({ initialData, mode }: ShopFormProps) {
     email: initialData?.email ?? "",
     shopType: initialData?.shopType ?? "RETAIL",
     address: initialData?.address ?? "",
+    city: initialData?.city ?? "",
     latitude: initialData?.latitude ?? null as number | null,
     longitude: initialData?.longitude ?? null as number | null,
     isActive: initialData?.isActive ?? true,
@@ -208,8 +210,20 @@ export function ShopForm({ initialData, mode }: ShopFormProps) {
         </div>
       </div>
 
+      {/* City field — required for route grouping */}
       <div className="space-y-2">
-        <Label htmlFor="address">العنوان *</Label>
+        <Label htmlFor="city">المدينة / المنطقة *</Label>
+        <Input
+          id="city"
+          value={form.city}
+          onChange={(e) => update("city", e.target.value)}
+          required
+          placeholder="Dendermonde / Sint-Niklaas / Merksem..."
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="address">العنوان الكامل *</Label>
         <Textarea
           id="address"
           value={form.address}

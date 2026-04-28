@@ -1,5 +1,5 @@
-// GET /api/orders — list orders (filterable by date, status, shopId)
-// POST /api/orders — create a new order (ADMIN only)
+// GET /api/orders — list orders (filterable by date, status, shopId, distributorId)
+// POST /api/orders — create a new order with distributor assignment (ADMIN only)
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, badRequest, serverError } from "@/lib/api-helpers";
@@ -15,7 +15,6 @@ export async function GET(req: NextRequest) {
   const distributorId = searchParams.get("distributorId");
 
   try {
-    // Distributors can only see their own assigned orders
     const isDistributor = session!.user.role === "DISTRIBUTOR";
 
     const whereDate = date
@@ -32,14 +31,25 @@ export async function GET(req: NextRequest) {
         ...whereDate,
         ...(status ? { status: status as never } : {}),
         ...(shopId ? { shopId } : {}),
+        // Distributors see only their assigned orders via the direct distributorId field
         ...(isDistributor
-          ? { assignment: { distributorId: session!.user.id } }
+          ? { distributorId: session!.user.id }
           : distributorId
-          ? { assignment: { distributorId } }
+          ? { distributorId }
           : {}),
       },
       include: {
-        shop: { select: { id: true, name: true, address: true, latitude: true, longitude: true } },
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+        distributor: { select: { id: true, name: true } },
         assignment: {
           include: {
             distributor: { select: { id: true, name: true } },
@@ -48,7 +58,7 @@ export async function GET(req: NextRequest) {
         },
         _count: { select: { items: true } },
       },
-      orderBy: { deliveryDate: "desc" },
+      orderBy: [{ deliveryDate: "desc" }, { createdAt: "desc" }],
     });
 
     return NextResponse.json(orders);
@@ -63,52 +73,92 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { shopId, deliveryDate, notes, items } = body;
+    const { shopId, deliveryDate, notes, distributorId, items } = body;
 
-    if (!shopId || !deliveryDate || !items?.length) {
-      return badRequest("المحل وتاريخ التسليم والبنود مطلوبة");
+    // All fields are required for order creation
+    if (!shopId || !deliveryDate || !distributorId || !items?.length) {
+      return badRequest("المحل وتاريخ التسليم والموزع والبنود مطلوبة");
     }
 
-    // Build order items with current product prices as snapshot
+    // Validate distributor exists and is active
+    const distributor = await prisma.user.findFirst({
+      where: { id: distributorId, role: "DISTRIBUTOR", isActive: true },
+      select: { id: true, name: true },
+    });
+    if (!distributor) {
+      return badRequest("الموزع المختار غير موجود أو غير نشط");
+    }
+
+    // Validate shop exists
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { name: true },
+    });
+    if (!shop) {
+      return badRequest("المحل غير موجود");
+    }
+
+    // Snapshot product prices at order creation time
     const productIds = items.map((i: { productId: string }) => i.productId);
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
     });
-
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    const orderItems = items.map((item: { productId: string; quantity: number }) => {
-      const product = productMap.get(item.productId);
-      if (!product) throw new Error(`منتج غير موجود: ${item.productId}`);
-      const unitPrice = Number(product.unitPrice);
-      const subtotal = unitPrice * item.quantity;
-      return {
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPriceSnapshot: unitPrice,
-        subtotal,
-      };
-    });
+    const orderItems = items.map(
+      (item: { productId: string; quantity: number; isGift?: boolean }) => {
+        const product = productMap.get(item.productId);
+        if (!product) throw new Error(`منتج غير موجود: ${item.productId}`);
+        const unitPrice = Number(product.unitPrice);
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPriceSnapshot: unitPrice,
+          // Gift items have subtotal = 0 in the invoice; price snapshot kept for reference
+          subtotal: item.isGift ? 0 : unitPrice * item.quantity,
+          isGift: item.isGift ?? false,
+        };
+      }
+    );
 
-    const order = await prisma.order.create({
-      data: {
-        shopId,
-        deliveryDate: new Date(deliveryDate),
-        notes: notes || null,
-        status: "draft",
-        createdById: session!.user.id,
-        items: { create: orderItems },
-        events: {
-          create: {
-            actorId: session!.user.id,
-            description: "تم إنشاء الطلب",
+    // Create order + DistributionAssignment atomically in a transaction
+    const order = await prisma.$transaction(async (tx) => {
+      const newOrder = await tx.order.create({
+        data: {
+          shopId,
+          deliveryDate: new Date(deliveryDate),
+          notes: notes || null,
+          // Order starts at ready_for_distribution — no draft/confirmed steps
+          status: "ready_for_distribution",
+          createdById: session!.user.id,
+          distributorId,
+          items: { create: orderItems },
+          events: {
+            create: {
+              actorId: session!.user.id,
+              description: `تم إنشاء الطلب وتعيينه للموزع: ${distributor.name}`,
+            },
           },
         },
-      },
-      include: {
-        shop: { select: { name: true } },
-        items: { include: { product: { select: { name: true } } } },
-      },
+        include: {
+          shop: { select: { name: true, city: true } },
+          distributor: { select: { name: true } },
+          items: {
+            include: { product: { select: { name: true, unit: true } } },
+          },
+        },
+      });
+
+      // Create DistributionAssignment for backward compatibility and vehicle tracking
+      await tx.distributionAssignment.create({
+        data: {
+          orderId: newOrder.id,
+          distributorId,
+          assignedById: session!.user.id,
+        },
+      });
+
+      return newOrder;
     });
 
     return NextResponse.json(order, { status: 201 });

@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
-type OrderStatus = "draft" | "confirmed" | "ready_for_distribution" | "out_for_delivery" | "delivered" | "cancelled";
+// v2: simplified lifecycle — no draft/confirmed
+type OrderStatus = "ready_for_distribution" | "out_for_delivery" | "delivered" | "cancelled";
 
 interface StatusAction {
   status: OrderStatus;
@@ -17,17 +18,9 @@ interface StatusAction {
 }
 
 const TRANSITIONS: Record<OrderStatus, StatusAction[]> = {
-  draft: [
-    { status: "confirmed", label: "تأكيد الطلب", variant: "default" },
-    { status: "cancelled", label: "إلغاء", variant: "destructive" },
-  ],
-  confirmed: [
-    { status: "ready_for_distribution", label: "جاهز للتوزيع", variant: "default" },
-    { status: "cancelled", label: "إلغاء", variant: "destructive" },
-  ],
   ready_for_distribution: [
     { status: "out_for_delivery", label: "خرج للتسليم", variant: "default" },
-    { status: "cancelled", label: "إلغاء", variant: "destructive" },
+    { status: "cancelled", label: "إلغاء الطلب", variant: "destructive" },
   ],
   out_for_delivery: [
     { status: "delivered", label: "تم التسليم ✓", variant: "default" },

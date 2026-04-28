@@ -5,10 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth, badRequest, serverError } from "@/lib/api-helpers";
 import type { OrderStatus } from "@/generated/client/enums";
 
-// Valid status transitions per role
+// v2 simplified transitions — no draft/confirmed
 const ADMIN_TRANSITIONS: Record<string, OrderStatus[]> = {
-  draft: ["confirmed", "cancelled"],
-  confirmed: ["ready_for_distribution", "cancelled"],
   ready_for_distribution: ["out_for_delivery", "cancelled"],
   out_for_delivery: ["delivered"],
   delivered: [],
@@ -16,7 +14,6 @@ const ADMIN_TRANSITIONS: Record<string, OrderStatus[]> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  confirmed: "تم تأكيد الطلب",
   ready_for_distribution: "الطلب جاهز للتوزيع",
   out_for_delivery: "الطلب خرج للتسليم",
   delivered: "تم تسليم الطلب",
@@ -48,7 +45,11 @@ export async function PATCH(
 
     // Distributors can only mark their own assigned orders as delivered
     if (isDistributor) {
-      if (order.assignment?.distributorId !== session!.user.id) {
+      // Check via direct distributorId field (v2) or assignment (fallback)
+      const isAssigned =
+        order.distributorId === session!.user.id ||
+        order.assignment?.distributorId === session!.user.id;
+      if (!isAssigned) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
       if (status !== "delivered" || order.status !== "out_for_delivery") {
